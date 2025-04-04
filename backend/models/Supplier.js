@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const supplierSchema = new mongoose.Schema({
   name: {
@@ -27,6 +27,7 @@ const supplierSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  resources: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resource' }], ////IList<Fourniseur>: Fourniseurs
   createdAt: {
     type: Date,
     default: Date.now,
@@ -35,11 +36,11 @@ const supplierSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-})
+});
 
 supplierSchema.pre("save", function (next) {
-  this.updatedAt = Date.now()
-  next()
-})
+  this.updatedAt = Date.now();
+  next();
+});
 
-module.exports = mongoose.model("Supplier", supplierSchema)
+module.exports = mongoose.model("Supplier", supplierSchema);

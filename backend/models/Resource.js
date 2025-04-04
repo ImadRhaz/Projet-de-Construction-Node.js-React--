@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const resourceSchema = new mongoose.Schema({
   name: {
@@ -11,17 +11,17 @@ const resourceSchema = new mongoose.Schema({
     enum: ["Matériau", "Équipement", "Personnel"],
     required: true,
   },
-  quantity: {
+  quantityAvailable: {  
     type: Number,
     required: true,
     min: 0,
   },
-  unit: {
+  unit: {             
     type: String,
     required: true,
     trim: true,
   },
-  supplierId: {
+  supplier: {       
     type: mongoose.Schema.Types.ObjectId,
     ref: "Supplier",
   },
@@ -33,12 +33,12 @@ const resourceSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-})
+});
 
 
 resourceSchema.pre("save", function (next) {
-  this.updatedAt = Date.now()
-  next()
-})
+  this.updatedAt = Date.now();
+  next();
+});
 
-module.exports = mongoose.model("Resource", resourceSchema)
+module.exports = mongoose.model("Resource", resourceSchema);

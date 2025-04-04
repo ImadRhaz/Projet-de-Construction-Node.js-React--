@@ -1,15 +1,15 @@
-  const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
-  const taskSchema = new mongoose.Schema({
+const taskSchema = new mongoose.Schema({
     projectId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
-      required: true,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Project",
+        required: true,
     },
     description: {
-      type: String,
-      required: true,
-      trim: true,
+        type: String,
+        required: true,
+        trim: true,
     },
     startDate: {
       type: Date,
@@ -19,23 +19,10 @@
       type: Date,
       required: true,
     },
-    resources: [
-      {
-        resourceId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Resource",
-        },
-        quantity: {
-          type: Number,
-          required: true,
-          default: 1,
-        },
-      },
-    ],
-    status: {
-      type: String,
-      enum: ["À faire", "En cours", "Terminé", "En retard"],
-      default: "À faire",
+    status: { // Les autres champs restent inchangés
+        type: String,
+        enum: ["À faire", "En cours", "Terminé", "En retard"],
+        default: "À faire",
     },
     createdAt: {
       type: Date,
@@ -45,12 +32,19 @@
       type: Date,
       default: Date.now,
     },
-  })
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+});
 
+// Champ virtuel pour accéder aux ressources via TaskResource
+taskSchema.virtual('taskResources', {
+    ref: 'TaskResource',
+    localField: '_id',
+    foreignField: 'task'
+});
 
-  taskSchema.pre("save", function (next) {
-    this.updatedAt = Date.now()
-    next()
-  })
+taskSchema.pre("save", function (next) {
+    this.updatedAt = Date.now();
+    next();
+});
 
-  module.exports = mongoose.model("Task", taskSchema)
+module.exports = mongoose.model("Task", taskSchema);
