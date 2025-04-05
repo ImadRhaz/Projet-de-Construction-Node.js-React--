@@ -11,6 +11,7 @@ const resourceRoutes = require("./routes/resourceRoutes")
 const supplierRoutes = require("./routes/supplierRoutes")
 const authRoutes = require("./routes/authRoutes")
 const swaggerDocs = require("./config/swagger");
+const taskResourceRoutes = require("./routes/taskResourceRoutes"); // Importer les routes
 
 const { authenticateToken } = require("./middleware/authMiddleware")
 
@@ -35,7 +36,8 @@ mongoose
   app.use("/api/tasks", authenticateToken, taskRoutes)
   app.use("/api/resources", authenticateToken, resourceRoutes)
   app.use("/api/suppliers", authenticateToken, supplierRoutes)
-  
+  app.use('/api/task-resources', authenticateToken, taskResourceRoutes); // Monter les routes
+
 
 app.get("/", (req, res) => {
   res.send("API Natec Services")

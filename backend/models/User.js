@@ -1,30 +1,40 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
+const options = {
+  discriminatorKey: 'role',
+  collection: 'users'
+};
+
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
-    required: true,
+    required: [true, "Le nom d'utilisateur est requis."],
     unique: true,
     trim: true,
   },
+  email: {
+    type: String,
+    required: [true, "L'email est requis."],
+    unique: true,
+    trim: true,
+    lowercase: true,
+  },
   password: {
     type: String,
-    required: true,
+    required: [true, "Le mot de passe est requis."],
+    minlength: 6
   },
   role: {
     type: String,
-    enum: ["user"],
-    default: "user",
+    required: true,
+    // Assurez-vous que 'admin' est inclus si vous l'utilisez comme rôle valide
+    enum: ["ChefProjet", "Supplier", "Admin"], // Ajout de 'Admin' basé sur votre middleware isAdmin
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  projects: [{ type: mongoose.Schema.Types.ObjectId, ref: "Project" }],//IList<Project>: Projets
-  tasks: [{ type: mongoose.Schema.Types.ObjectId, ref: "Task" }],//IList<Task>: Tasks
-});
+}, options);
 
+// Middleware pour hasher le mot de passe avant sauvegarde
+// La mise à jour de updatedAt a été supprimée
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
 
@@ -37,9 +47,10 @@ userSchema.pre("save", async function (next) {
   }
 });
 
+// Méthode pour comparer le mot de passe
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-module.exports = mongoose.model("User", userSchema);
-
+const User = mongoose.model("User", userSchema);
+module.exports = User;

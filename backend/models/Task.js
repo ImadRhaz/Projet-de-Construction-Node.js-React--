@@ -1,50 +1,63 @@
+// models/Task.js
 const mongoose = require("mongoose");
 
 const taskSchema = new mongoose.Schema({
-    projectId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Project",
-        required: true,
-    },
     description: {
         type: String,
-        required: true,
+        required: [true, "La description de la tâche est requise."],
         trim: true,
     },
     startDate: {
       type: Date,
-      required: true,
     },
     endDate: {
       type: Date,
-      required: true,
+      validate: {
+        validator: function(value) {
+            return !this.startDate || !value || value >= this.startDate;
+        },
+        message: 'La date de fin de la tâche doit être postérieure ou égale à la date de début.'
+      }
     },
-    status: { // Les autres champs restent inchangés
+    status: {
         type: String,
-        enum: ["À faire", "En cours", "Terminé", "En retard"],
+        enum: ["À faire", "En cours", "Terminé", "En retard", "Bloqué"],
         default: "À faire",
+        required: [true, "Le statut de la tâche est requis."]
     },
-    createdAt: {
-      type: Date,
-      default: Date.now,
+    // --- Relations ---
+    project: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Project",
+        required: [true, "La tâche doit être associée à un projet."]
     },
-    updatedAt: {
-      type: Date,
-      default: Date.now,
+    assignedUser: {  // Car Meme Admin ou employé peut creer une Tache
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: [true, "La tâche doit être assignée à un utilisateur."]
     },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    // --- Champ Virtuel pour la Relation avec TaskResource ---
+    // Ce champ permet de "peupler" les ressources associées à cette tâche.
+    // Il correspond à la relation 1 vers 0..* partant de Tache vers TacheResource.
+
+}, {
+    timestamps: true, // Gère createdAt et updatedAt
+    // Important pour que les champs virtuels soient inclus dans les sorties JSON/objet
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
 });
 
-// Champ virtuel pour accéder aux ressources via TaskResource
+// Définition du champ virtuel 'taskResources'
 taskSchema.virtual('taskResources', {
-    ref: 'TaskResource',
-    localField: '_id',
-    foreignField: 'task'
+    ref: 'TaskResource',      // Le modèle à utiliser pour le peuplement
+    localField: '_id',        // Le champ dans Task (_id)
+    foreignField: 'task'      // Le champ dans TaskResource qui référence Task (nommé 'task')
 });
 
-taskSchema.pre("save", function (next) {
-    this.updatedAt = Date.now();
-    next();
-});
+
+// --- Index ---
+taskSchema.index({ project: 1 });
+taskSchema.index({ assignedUser: 1 });
+taskSchema.index({ status: 1 });
 
 module.exports = mongoose.model("Task", taskSchema);

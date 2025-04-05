@@ -1,67 +1,69 @@
 // controllers/projectController.js
 
-// Importez les modèles nécessaires
+const mongoose = require("mongoose");
 const Project = require("../models/Project");
 const User = require("../models/User");
-const Task = require("../models/Task"); // Import même si non utilisé directement partout
-const Commande = require("../models/Commande"); // Import même si non utilisé directement partout
+const ChefProjet = require("../models/ChefProjet"); // Important pour mettre à jour le ChefProjet
+const Task = require("../models/Task");
+const Commande = require("../models/Commande");
+const TaskResource = require("../models/TaskResource"); // Importer pour suppression en cascade éventuelle
 
 // --- GET ALL PROJECTS ---
-// Récupère tous les projets, peuplant l'utilisateur créateur
 exports.getAllProjects = async (req, res) => {
   try {
     const projects = await Project.find()
-      .populate('user', 'username') // Sélectionne uniquement 'username' de l'utilisateur
+      .populate('chefProjet', 'username email role')
       .sort({ createdAt: -1 });
     res.status(200).json(projects);
   } catch (error) {
-    console.error("Erreur getAllProjects:", error); // Log l'erreur côté serveur
+    console.error("Erreur getAllProjects:", error);
     res.status(500).json({ message: "Erreur serveur lors de la récupération des projets.", error: error.message });
   }
 };
 
-// --- GET PROJECTS BY USER ID ---
-// Récupère tous les projets créés par un utilisateur spécifique via son ID dans l'URL
-exports.getProjectsByUserId = async (req, res) => {
+// --- GET PROJECTS BY CHEF_PROJET ID ---
+exports.getProjectsByChefProjet = async (req, res) => {
   try {
-    const userId = req.params.userId; // Récupère l'ID utilisateur depuis les paramètres de l'URL
+    const chefProjetId = req.params.userId;
+    if (!mongoose.Types.ObjectId.isValid(chefProjetId)) {
+      return res.status(400).json({ message: "Format de l'ID utilisateur invalide." });
+    }
 
-    // Vérifier si l'utilisateur existe réellement
-    const userExists = await User.findById(userId);
+    const userExists = await User.findById(chefProjetId);
     if (!userExists) {
       return res.status(404).json({ message: "Utilisateur non trouvé avec cet ID." });
     }
+    // Optionnel: vérifier si c'est bien un ChefProjet
+    // if (userExists.role !== 'ChefProjet') {
+    //    return res.status(400).json({ message: "L'utilisateur n'est pas un Chef de Projet." });
+    // }
 
-    // Trouve tous les projets où le champ 'user' correspond à l'ID fourni
-    const projects = await Project.find({ user: userId })
-                                  .sort({ createdAt: -1 }); // Trier par date de création
-
-    res.status(200).json(projects); // Renvoie un tableau vide si aucun projet trouvé, ce n'est pas une erreur
+    const projects = await Project.find({ chefProjet: chefProjetId })
+                                  .populate('chefProjet', 'username email') // Peuple le chef pour confirmation
+                                  .sort({ createdAt: -1 });
+    res.status(200).json(projects);
 
   } catch (error) {
-    console.error(`Erreur getProjectsByUserId pour UserID ${req.params.userId}:`, error);
-    if (error.kind === 'ObjectId') { // Gérer les erreurs de format d'ID
-        return res.status(400).json({ message: "ID d'utilisateur fourni invalide." });
-    }
-    res.status(500).json({ message: "Erreur serveur lors de la récupération des projets de l'utilisateur.", error: error.message });
+    console.error(`Erreur getProjectsByChefProjet pour UserID ${req.params.userId}:`, error);
+    res.status(500).json({ message: "Erreur serveur.", error: error.message });
   }
 };
 
 // --- GET PROJECT BY ID ---
-// Récupère un projet spécifique par son ID, peuplant les détails associés
 exports.getProjectById = async (req, res) => {
   try {
     const projectId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ message: "Format de l'ID de projet invalide." });
+    }
+
     const project = await Project.findById(projectId)
-      .populate('user', 'username') // Peuple l'utilisateur
-      .populate('tasks')            // Peuple les tâches (peut être volumineux)
-      .populate({                 // Peuple les commandes avec détails imbriqués
+      .populate('chefProjet', 'username email role')
+      .populate('tasks') // Peupler les tâches associées
+      .populate({ // Peupler les commandes et leur fournisseur
           path: 'commandes',
-          populate: [
-              { path: 'user', select: 'username' },  // Utilisateur de la commande
-              { path: 'supplier', select: 'name' }   // Fournisseur de la commande
-              // Ajoutez d'autres populate si besoin
-          ]
+          options: { sort: { createdAt: -1 } },
+          populate: { path: 'supplier', select: 'username email contact phone' }
       });
 
     if (!project) {
@@ -71,138 +73,162 @@ exports.getProjectById = async (req, res) => {
 
   } catch (error) {
     console.error(`Erreur getProjectById pour ID ${req.params.id}:`, error);
-    if (error.kind === 'ObjectId') {
-        return res.status(400).json({ message: "ID de projet fourni invalide." });
-    }
-    res.status(500).json({ message: "Erreur serveur lors de la récupération du projet.", error: error.message });
+    res.status(500).json({ message: "Erreur serveur.", error: error.message });
   }
 };
 
-// --- CREATE PROJECT (Version correcte utilisant l'ID du token) ---
+// --- CREATE PROJECT ---
 exports.createProject = async (req, res) => {
     try {
-        // Récupérer les données du projet depuis le corps de la requête
         const { name, description, startDate, endDate, budget, status } = req.body;
+        const chefProjetId = req.user?.id;
 
-        // Récupérer l'ID de l'utilisateur connecté depuis le token JWT (via middleware)
-        const userId = req.user?.id; // <--- VIENT DU TOKEN (req.user)
+        if (!chefProjetId) return res.status(401).json({ message: "Utilisateur non authentifié." });
+        if (req.user.role !== 'ChefProjet') return res.status(403).json({ message: "Accès refusé. Seul un Chef de Projet peut créer un projet." });
 
-        // Vérifier si l'utilisateur est authentifié
-        if (!userId) {
-            return res.status(401).json({ message: "Utilisateur non authentifié ou ID non trouvé dans le token." });
-        }
+        const projectData = {
+            name, description, startDate, endDate,
+            budget: (budget !== undefined && budget !== null) ? Number(budget) : undefined,
+            status,
+            chefProjet: chefProjetId
+        };
 
-        // Création de l'instance de projet avec l'ID utilisateur du TOKEN
-        const newProject = new Project({
-            name, description, startDate, endDate, budget, status,
-            user: userId // <--- ASSIGNATION DE L'UTILISATEUR DU TOKEN
-        });
-
-        // Sauvegarde et validation Mongoose
+        const newProject = new Project(projectData);
         const savedProject = await newProject.save();
 
-        // Ajouter la référence du projet à la liste de l'utilisateur
-        await User.findByIdAndUpdate(userId, { $push: { projects: savedProject._id } });
+        // --- MISE À JOUR BIDIRECTIONNELLE ---
+        // Ajouter le projet à la liste du ChefProjet
+        await ChefProjet.findByIdAndUpdate(chefProjetId, { $addToSet: { projectsManaged: savedProject._id } });
+        // --- FIN MISE À JOUR ---
 
-        // Peupler et renvoyer la réponse
-        const projectResponse = await Project.findById(savedProject._id).populate('user', 'username');
+        const projectResponse = await Project.findById(savedProject._id)
+                                        .populate('chefProjet', 'username email role');
         res.status(201).json(projectResponse);
 
     } catch (error) {
+        // ... (Gestion d'erreur détaillée comme dans les versions précédentes) ...
         console.error("Erreur createProject:", error);
-        if (error.name === 'ValidationError') { // Gérer les erreurs de validation
-            const errors = Object.values(error.errors).map(el => el.message);
-            return res.status(400).json({ message: "Erreur de validation des données du projet.", details: errors });
+        // Gestion spécifique des erreurs de validation/cast/unicité
+        if (error.name === 'ValidationError' || error.name === 'CastError' || (error.code === 11000)) {
+            let details = [];
+            let statusCode = 400;
+            let message = "Erreur de validation des données.";
+            if (error.name === 'ValidationError') { details = Object.values(error.errors).map(el => el.message); }
+            else if (error.name === 'CastError') { details.push(`Format invalide pour '${error.path}'.`); }
+            else if (error.code === 11000) { statusCode = 409; message = "Erreur: Un projet avec ce nom existe peut-être déjà."; details.push(error.message); }
+            return res.status(statusCode).json({ message, details });
         }
         res.status(500).json({ message: "Erreur serveur lors de la création du projet.", error: error.message });
     }
 };
 
 // --- UPDATE PROJECT ---
-// Met à jour un projet, vérifiant l'autorisation
 exports.updateProject = async (req, res) => {
     try {
         const projectId = req.params.id;
-        // Récupérer uniquement les champs modifiables du corps
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+          return res.status(400).json({ message: "Format de l'ID de projet invalide." });
+        }
         const { name, description, startDate, endDate, budget, status } = req.body;
-        const updateData = { name, description, startDate, endDate, budget, status };
 
-        // 1. Trouver le projet pour vérifier l'autorisation
-        const project = await Project.findById(projectId);
-        if (!project) {
-             return res.status(404).json({ message: "Projet non trouvé" });
+        const updateData = {};
+        if (name !== undefined) updateData.name = name;
+        if (description !== undefined) updateData.description = description;
+        if (startDate !== undefined) updateData.startDate = startDate;
+        if (endDate !== undefined) updateData.endDate = endDate;
+        if (status !== undefined) updateData.status = status;
+        if (budget !== undefined && budget !== null) {
+            const numBudget = Number(budget);
+            if (isNaN(numBudget) || numBudget < 0) return res.status(400).json({ message: "Budget invalide."});
+            updateData.budget = numBudget;
         }
 
-        // 2. Vérifier l'autorisation : seul le créateur ou un admin peut modifier
-        if (req.user.id !== project.user.toString() && req.user.role !== 'admin') {
-            return res.status(403).json({ message: "Vous n'êtes pas autorisé à modifier ce projet." });
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ message: "Aucun champ à mettre à jour fourni." });
         }
 
-        // 3. Mettre à jour avec validation
+        const projectToUpdate = await Project.findById(projectId);
+        if (!projectToUpdate) return res.status(404).json({ message: "Projet non trouvé." });
+
+        // Vérification d'autorisation
+        if (req.user.id !== projectToUpdate.chefProjet.toString() && req.user.role !== 'Admin') {
+             return res.status(403).json({ message: "Accès refusé." });
+        }
+
         const updatedProject = await Project.findByIdAndUpdate(
-             projectId,
-             { $set: updateData }, // $set est plus sûr pour ne mettre à jour que les champs fournis
-             { new: true, runValidators: true } // Indispensable pour la validation et retourner le nouveau doc
-        ).populate('user', 'username'); // Renvoyer avec l'utilisateur peuplé
+             projectId, { $set: updateData }, { new: true, runValidators: true }
+        ).populate('chefProjet', 'username email role');
+
+        if (!updatedProject) return res.status(404).json({ message: "Projet non trouvé après màj." });
 
         res.status(200).json(updatedProject);
 
     } catch (error) {
+       // ... (Gestion d'erreur détaillée comme dans createProject) ...
         console.error("Erreur updateProject:", error);
-        if (error.kind === 'ObjectId') { // Erreur de format d'ID
-            return res.status(400).json({ message: "ID de projet invalide." });
+        // Gestion validation/cast/unicité
+        if (error.name === 'ValidationError' || error.name === 'CastError' || (error.code === 11000)) {
+            // ... (logique similaire à createProject pour déterminer message/statusCode/details) ...
+             return res.status(400).json({ message: "Erreur lors de la mise à jour.", error: error.message }); // Simplifié pour l'exemple
         }
-        if (error.name === 'ValidationError') { // Erreur de validation Mongoose
-            const errors = Object.values(error.errors).map(el => el.message);
-            return res.status(400).json({ message: "Erreur de validation lors de la mise à jour.", details: errors });
-        }
-        res.status(500).json({ message: "Erreur serveur lors de la mise à jour du projet.", error: error.message });
+       res.status(500).json({ message: "Erreur serveur lors de la mise à jour du projet.", error: error.message });
     }
 };
 
 // --- DELETE PROJECT ---
-// Supprime un projet, vérifiant l'autorisation et les dépendances
 exports.deleteProject = async (req, res) => {
   try {
     const projectId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ message: "Format de l'ID de projet invalide." });
+    }
 
-    // 1. Trouver le projet
     const projectToDelete = await Project.findById(projectId);
-    if (!projectToDelete) {
-         return res.status(404).json({ message: "Projet non trouvé" });
+    if (!projectToDelete) return res.status(404).json({ message: "Projet non trouvé." });
+
+    // Vérification d'autorisation
+    if (req.user.id !== projectToDelete.chefProjet.toString() && req.user.role !== 'Admin') {
+        return res.status(403).json({ message: "Accès refusé." });
     }
 
-    // 2. Vérifier l'autorisation
-    if (req.user.id !== projectToDelete.user.toString() && req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Vous n'êtes pas autorisé à supprimer ce projet." });
+    // --- GESTION DES DÉPENDANCES AVANT SUPPRESSION ---
+    // 1. Trouver les tâches liées
+    const tasksToDelete = await Task.find({ project: projectId }).select('_id'); // Seulement besoin des IDs
+    const taskIdsToDelete = tasksToDelete.map(task => task._id);
+
+    // 2. Supprimer les TaskResource liées à ces tâches (si elles existent)
+    if (taskIdsToDelete.length > 0) {
+        await TaskResource.deleteMany({ task: { $in: taskIdsToDelete } });
+        console.log(`Liens TaskResource pour les tâches du projet ${projectId} supprimés.`);
     }
 
-    // 3. Vérifier les dépendances (exemple : tâches)
-    if (projectToDelete.tasks && projectToDelete.tasks.length > 0) {
-        // Règle métier : ne pas supprimer si des tâches existent
-        return res.status(400).json({ message: "Impossible de supprimer : des tâches sont associées à ce projet. Supprimez d'abord les tâches." });
-        // Alternative : supprimer les tâches ici si la règle le permet
-    }
-     // 4. Vérifier les dépendances (exemple : commandes)
-    if (projectToDelete.commandes && projectToDelete.commandes.length > 0) {
-       // Règle métier : ne pas supprimer si des commandes existent
-       return res.status(400).json({ message: "Impossible de supprimer : des commandes sont associées à ce projet." });
-       // Alternative : supprimer/désassocier les commandes ici
+    // 3. Supprimer les tâches elles-mêmes
+    if (taskIdsToDelete.length > 0) {
+        await Task.deleteMany({ _id: { $in: taskIdsToDelete } });
+        console.log(`Tâches du projet ${projectId} supprimées.`);
     }
 
-    // 5. Supprimer le projet
-    await Project.findByIdAndDelete(projectId);
+    // 4. Gérer les Commandes (exemple : juste désassocier pour ne pas bloquer)
+    //    Alternative : vérifier count et bloquer, ou supprimer aussi CommandeRessource/Commande
+    await Commande.updateMany({ projet: projectId }, { $unset: { projet: "" } }); // Désassocie les commandes
+    console.log(`Commandes désassociées du projet ${projectId}.`);
+    // --- FIN GESTION DÉPENDANCES ---
 
-    // 6. Retirer la référence du projet de la liste de l'utilisateur
-    await User.findByIdAndUpdate(projectToDelete.user, { $pull: { projects: projectId } });
 
-    res.status(200).json({ message: "Projet supprimé avec succès" });
+    // --- SUPPRESSION PRINCIPALE ET MISE À JOUR BIDIRECTIONNELLE ---
+    await Promise.all([
+        Project.findByIdAndDelete(projectId), // Supprime le projet
+        // Retire le projet de la liste du ChefProjet
+        ChefProjet.findByIdAndUpdate(projectToDelete.chefProjet, { $pull: { projectsManaged: projectId } }),
+        // Retirer les tâches des listes tasksAssigned des utilisateurs concernés (plus complexe)
+        // Pourrait nécessiter de boucler sur taskIdsToDelete et faire $pull sur chaque assignedUser si c'est un ChefProjet
+    ]);
+    // --- FIN SUPPRESSION ---
+
+    res.status(200).json({ message: "Projet et ses tâches associées supprimés avec succès." });
 
   } catch (error) {
     console.error("Erreur deleteProject:", error);
-    if (error.kind === 'ObjectId') { // Erreur de format d'ID
-        return res.status(400).json({ message: "ID de projet invalide." });
-    }
     res.status(500).json({ message: "Erreur serveur lors de la suppression du projet.", error: error.message });
   }
 };

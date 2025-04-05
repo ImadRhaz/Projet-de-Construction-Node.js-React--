@@ -2,37 +2,39 @@
 const mongoose = require('mongoose');
 
 const commandeRessourceSchema = new mongoose.Schema({
-  // String: CommandeId (Référence à la Commande)
   commande: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Commande', // Nom du modèle Commande
+    ref: 'Commande',
     required: true,
   },
-  // String: RessourceId (Référence à la Ressource)
   ressource: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Ressource', // Nom du modèle Ressource
+    ref: 'Resource',
     required: true,
   },
-  // Number: quantite (La quantité de CETTE ressource dans CETTE commande)
-  quantiteCommandee: { // Renommé pour clarté
+  quantiteCommandee: {
     type: Number,
-    required: [true, "La quantité commandée pour cette ressource est requise."],
-    min: [1, "La quantité commandée doit être d'au moins 1."] // Une quantité de 0 n'a pas de sens ici
+    required: [true, "La quantité commandée est requise."],
+    min: [1, "La quantité doit être d'au moins 1."]
+  },
+
+  // --- ATTRIBUT AJOUTÉ POUR LE STATUT DE VALIDATION FOURNISSEUR ---
+  statutFournisseur: {
+    type: String,
+    // enum définit les valeurs possibles pour ce statut
+    enum: ['En attente de validation', 'Validé par fournisseur', 'Refusé par fournisseur'],
+    // default définit la valeur initiale quand une ligne est créée
+    default: 'En attente de validation',
+    required: [true, "Le statut de validation fournisseur est requis pour chaque ligne de commande."] // Rendre le champ obligatoire
   }
- 
+  // --------------------------------------------------------------------
 
 }, {
-  timestamps: true // Utile pour savoir quand une ressource a été ajoutée/modifiée dans une commande
+  timestamps: true // createdAt et updatedAt pour cette ligne de commande
 });
 
-// Index composé pour assurer l'unicité (une ressource ne peut pas être deux fois dans la même commande)
-// et accélérer les recherches par commande + ressource.
+// Index
 commandeRessourceSchema.index({ commande: 1, ressource: 1 }, { unique: true });
-
-// Index simples pour accélérer les recherches par commande ou par ressource
-commandeRessourceSchema.index({ commande: 1 });
-commandeRessourceSchema.index({ ressource: 1 });
-
+commandeRessourceSchema.index({ statutFournisseur: 1 }); // Ajouter un index sur le nouveau statut peut être utile
 
 module.exports = mongoose.model('CommandeRessource', commandeRessourceSchema);

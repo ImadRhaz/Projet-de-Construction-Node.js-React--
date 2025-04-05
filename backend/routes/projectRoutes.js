@@ -3,331 +3,257 @@
 const express = require("express");
 const router = express.Router();
 const projectController = require("../controllers/projectController");
-// Assurez-vous que le chemin est correct pour votre middleware
-const { authenticateToken } = require('../middleware/authMiddleware'); // Ou authMiddleware
+const { authenticateToken } = require('../middleware/authMiddleware');
+// const { isAdmin, isChefProjet } = require('../middleware/authMiddleware');
 
 /**
  * @swagger
  * tags:
  *   name: Projects
- *   description: API pour la gestion des projets
+ *   # AJOUT D'UNE NOTE IMPORTANTE SUR LES URLS RÉELLES
+ *   description: 'API pour la gestion des projets. IMPORTANT : Les URLs réelles d''appel sont préfixées par /api (ex: appelez /api/projects pour la route documentée comme /projects).'
  */
 
 /**
  * @swagger
  * components:
  *   schemas:
- *     ProjectInput: # Schéma pour la création/mise à jour (sans champs auto-générés)
+ *     ProjectInput: # Schéma pour la CRÉATION / MISE À JOUR
  *       type: object
- *       properties:
- *         name:
- *           type: string
- *           description: Nom du projet
- *           example: "Nouveau Site Web E-commerce"
- *         description:
- *           type: string
- *           description: Description détaillée du projet
- *           example: "Développement complet d'une plateforme e-commerce"
- *         startDate:
- *           type: string
- *           format: date # Ou date-time
- *           description: Date de début prévue (format YYYY-MM-DD)
- *           example: "2024-09-01"
- *         endDate:
- *           type: string
- *           format: date # Ou date-time
- *           description: Date de fin prévue (format YYYY-MM-DD)
- *           example: "2025-03-31"
- *         budget:
- *           type: number
- *           format: float
- *           description: Budget total alloué
- *           example: 50000
- *         status:
- *           type: string
- *           enum: [Planifié, En cours, En attente, Terminé, Annulé]
- *           description: Statut du projet (Optionnel à la création, défaut 'Planifié')
- *           example: "Planifié"
  *       required:
  *         - name
  *         - description
  *         - startDate
  *         - endDate
  *         - budget
- *     ProjectResponse: # Schéma pour les réponses (incluant les champs auto-générés et peuplés)
- *       allOf: # Hérite des propriétés de ProjectInput
+ *       properties:
+ *         name:
+ *           type: string
+ *           example: "Construction Immeuble Le Central"
+ *         description:
+ *           type: string
+ *           example: "Construction d'un immeuble résidentiel de 10 étages."
+ *         startDate:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-09-01T00:00:00.000Z"
+ *         endDate:
+ *           type: string
+ *           format: date-time
+ *           example: "2027-03-31T00:00:00.000Z"
+ *         budget:
+ *           type: number # <-- Type correct
+ *           format: double
+ *           example: 1500000.50
+ *         status:
+ *           type: string
+ *           enum: [Planifié, En cours, En attente, Terminé, Annulé]
+ *           default: Planifié
+ *           example: "Planifié"
+ *
+ *     ProjectResponse: # Schéma pour les RÉPONSES (GET)
+ *       allOf:
  *         - $ref: '#/components/schemas/ProjectInput'
  *       type: object
  *       properties:
  *         _id:
  *           type: string
- *           description: L'ID auto-généré par MongoDB
  *           example: "60c72b3f9b1d8e001c8e4abc"
- *         user: # Peut être un ID ou un objet si peuplé
- *           oneOf:
- *             - type: string
- *               format: objectId
- *             - type: object
- *               properties:
- *                 _id:
- *                   type: string
- *                 username:
- *                   type: string
- *           description: L'utilisateur créateur (ID ou objet peuplé)
+ *         chefProjet: # <-- Nom corrigé
+ *           type: object
+ *           properties:
+ *             _id:
+ *               type: string
+ *               example: "653bb587a4b01a7d8c9d0f5e"
+ *             username:
+ *               type: string
+ *               example: "chef_martin"
+ *             email:
+ *               type: string
+ *               format: email
+ *               example: "martin@example.com"
+ *             role:
+ *               type: string
+ *               example: "ChefProjet"
+ *           description: Le chef de projet assigné (objet utilisateur peuplé)
  *         tasks:
  *           type: array
- *           items:
- *             type: string # Ou un schéma Task si vous en avez un et peuplez
- *             format: objectId
- *           description: Liste des IDs des tâches associées
+ *           items: { type: string, format: objectId }
+ *           example: ["61c72b3f9b1d8e001c8e4def"]
  *         commandes:
  *           type: array
- *           items:
- *             type: string # Ou un schéma Commande si vous en avez un et peuplez
- *             format: objectId
- *           description: Liste des IDs des commandes associées
+ *           items: { type: string, format: objectId }
+ *           example: ["63c72b3f9b1d8e001c8e4123"]
  *         createdAt:
  *           type: string
  *           format: date-time
- *           description: Date de création du document
  *         updatedAt:
  *           type: string
  *           format: date-time
- *           description: Date de la dernière mise à jour du document
+ *
  *   securitySchemes:
- *     bearerAuth: # Nom utilisé dans la section 'security' des routes
+ *     bearerAuth:
  *       type: http
  *       scheme: bearer
  *       bearerFormat: JWT
- *       description: "Entrez le token JWT précédé de 'Bearer '"
+ *       description: "Token JWT Bearer."
  */
 
 // --- ROUTES PROJETS ---
 
 /**
  * @swagger
- * /projects:
+ * /projects: # <-- Chemin documenté SANS /api
  *   get:
- *     summary: Récupérer tous les projets
+ *     summary: Récupérer la liste de tous les projets
  *     tags: [Projects]
+ *     description: 'Retourne tous les projets. Note : L''URL réelle d''appel est /api/projects.'
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Une liste de tous les projets
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/ProjectResponse'
- *       401:
- *         description: Non authentifié
- *       500:
- *         description: Erreur serveur
+ *         description: Succès - Liste des projets.
+ *         content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProjectResponse" }}}}
+ *       401: { description: Non authentifié }
+ *       500: { description: Erreur serveur }
  */
+// Le chemin Express reste '/' relatif au préfixe /api/projects
 router.get("/", authenticateToken, projectController.getAllProjects);
 
 /**
  * @swagger
- * /projects/user/{userId}:
+ * /projects/chef/{userId}: # <-- Chemin documenté SANS /api
  *   get:
- *     summary: Récupérer les projets par ID utilisateur
+ *     summary: Récupérer les projets gérés par un Chef de Projet
  *     tags: [Projects]
+ *     description: 'Retourne les projets d''un chef spécifique. Note : L''URL réelle d''appel est /api/projects/chef/{userId}.'
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *           format: objectId
- *         description: ID de l'utilisateur dont on veut les projets
+ *       - { in: path, name: userId, required: true, schema: { type: string, format: objectId }, description: ID du Chef de Projet }
  *     responses:
  *       200:
- *         description: Liste des projets pour l'utilisateur spécifié
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/ProjectResponse'
- *       400:
- *         description: ID utilisateur invalide
- *       401:
- *         description: Non authentifié
- *       404:
- *         description: Utilisateur non trouvé
- *       500:
- *         description: Erreur serveur
+ *         description: Succès - Liste des projets du chef.
+ *         content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProjectResponse" }}}}
+ *       400: { description: ID invalide }
+ *       401: { description: Non authentifié }
+ *       404: { description: Utilisateur non trouvé }
+ *       500: { description: Erreur serveur }
  */
-router.get("/user/:userId", authenticateToken, projectController.getProjectsByUserId);
+// Le chemin Express reste '/chef/:userId' relatif au préfixe /api/projects
+router.get("/chef/:userId", authenticateToken, projectController.getProjectsByChefProjet);
 
 /**
  * @swagger
- * /projects/{id}:
+ * /projects/{id}: # <-- Chemin documenté SANS /api
  *   get:
  *     summary: Récupérer un projet spécifique par son ID
  *     tags: [Projects]
+ *     description: 'Retourne les détails d''un projet. Note : L''URL réelle d''appel est /api/projects/{id}.'
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: objectId
- *         description: ID du projet à récupérer
+ *       - { in: path, name: id, required: true, schema: { type: string, format: objectId }, description: ID du Projet }
  *     responses:
  *       200:
- *         description: Détails du projet trouvé
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ProjectResponse'
- *       400:
- *         description: ID projet invalide
- *       401:
- *         description: Non authentifié
- *       404:
- *         description: Projet non trouvé
- *       500:
- *         description: Erreur serveur
+ *         description: Succès - Détails du projet.
+ *         content: { application/json: { schema: { $ref: "#/components/schemas/ProjectResponse" }}}
+ *       400: { description: ID invalide }
+ *       401: { description: Non authentifié }
+ *       404: { description: Projet non trouvé }
+ *       500: { description: Erreur serveur }
  */
+// Le chemin Express reste '/:id' relatif au préfixe /api/projects
 router.get("/:id", authenticateToken, projectController.getProjectById);
 
 /**
  * @swagger
- * /projects:
+ * /projects: # <-- Chemin documenté SANS /api
  *   post:
- *     summary: Créer un nouveau projet (Utilisateur via Token)
+ *     summary: Créer un nouveau projet
  *     tags: [Projects]
+ *     description: 'Crée un projet (chefProjet via token). Note : L''URL réelle d''appel est /api/projects.'
  *     security:
  *       - bearerAuth: []
  *     requestBody:
  *       required: true
- *       description: Données du projet à créer. L'utilisateur est déduit du token.
  *       content:
  *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/ProjectInput'
- *           # --- MODIFICATION ICI ---
- *           # Ajout d'un exemple spécifique pour le request body avec les types
+ *           schema: { $ref: "#/components/schemas/ProjectInput" }
  *           example:
- *             name: "string"
- *             description: "string"
- *             startDate: "Date"  # Ou "string" si vous préférez le type OpenAPI exact
- *             endDate: "Date"    # Ou "string"
- *             budget: "Number"   # Ou "number" si vous préférez le type OpenAPI exact
- *             status: "string"   # Enum mais le type de base est string
- *           # --- FIN MODIFICATION ---
+ *             name: "Rénovation Toiture Bâtiment A"
+ *             description: "Réfection complète de la toiture."
+ *             startDate: "2025-11-01T00:00:00.000Z"
+ *             endDate: "2026-01-31T00:00:00.000Z"
+ *             budget: 45000 # <-- Type number correct
+ *             status: "Planifié"
  *     responses:
  *       201:
- *         description: Projet créé avec succès
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ProjectResponse'
- *       400:
- *         description: Données invalides (Erreur de validation)
- *       401:
- *         description: Non authentifié
- *       500:
- *         description: Erreur serveur
+ *         description: Projet créé.
+ *         content: { application/json: { schema: { $ref: "#/components/schemas/ProjectResponse" }}}
+ *       400: { description: Données invalides }
+ *       401: { description: Non authentifié }
+ *       403: { description: Rôle non autorisé }
+ *       500: { description: Erreur serveur }
  */
-router.post("/", authenticateToken, projectController.createProject);
+// Le chemin Express reste '/' relatif au préfixe /api/projects
+router.post("/", authenticateToken, /* isChefProjet, */ projectController.createProject);
 
 /**
  * @swagger
- * /projects/{id}:
+ * /projects/{id}: # <-- Chemin documenté SANS /api
  *   put:
  *     summary: Mettre à jour un projet existant
  *     tags: [Projects]
+ *     description: 'Met à jour un projet (autorisation vérifiée). Note : L''URL réelle d''appel est /api/projects/{id}.'
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: objectId
- *         description: ID du projet à mettre à jour
+ *       - { in: path, name: id, required: true, schema: { type: string, format: objectId }, description: ID du Projet }
  *     requestBody:
  *       required: true
- *       description: Champs du projet à mettre à jour.
  *       content:
  *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/ProjectInput'
- *           # --- MODIFICATION ICI ---
- *           # Ajout d'un exemple spécifique pour le request body avec les types
+ *           schema: { $ref: "#/components/schemas/ProjectInput" }
  *           example:
- *             name: "string"
- *             description: "string"
- *             startDate: "Date"  # Ou "string"
- *             endDate: "Date"    # Ou "string"
- *             budget: "Number"   # Ou "number"
- *             status: "string"   # Enum mais le type de base est string
- *           # --- FIN MODIFICATION ---
+ *             description: "Mise à jour du périmètre"
+ *             budget: 48000 # <-- Type number
+ *             status: "En cours"
  *     responses:
  *       200:
- *         description: Projet mis à jour avec succès
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ProjectResponse'
- *       400:
- *         description: Données invalides ou ID invalide
- *       401:
- *         description: Non authentifié
- *       403:
- *         description: Non autorisé (pas le créateur ou admin)
- *       404:
- *         description: Projet non trouvé
- *       500:
- *         description: Erreur serveur
+ *         description: Projet mis à jour.
+ *         content: { application/json: { schema: { $ref: "#/components/schemas/ProjectResponse" }}}
+ *       400: { description: Données ou ID invalides }
+ *       401: { description: Non authentifié }
+ *       403: { description: Non autorisé }
+ *       404: { description: Projet non trouvé }
+ *       500: { description: Erreur serveur }
  */
+// Le chemin Express reste '/:id' relatif au préfixe /api/projects
 router.put("/:id", authenticateToken, projectController.updateProject);
 
 /**
  * @swagger
- * /projects/{id}:
+ * /projects/{id}: # <-- Chemin documenté SANS /api
  *   delete:
- *     summary: Supprimer un projet par ID
+ *     summary: Supprimer un projet par son ID
  *     tags: [Projects]
+ *     description: 'Supprime un projet (autorisation vérifiée). Note : L''URL réelle d''appel est /api/projects/{id}.'
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: objectId
- *         description: ID du projet à supprimer
+ *       - { in: path, name: id, required: true, schema: { type: string, format: objectId }, description: ID du Projet }
  *     responses:
  *       200:
- *         description: Projet supprimé avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Projet supprimé avec succès
- *       401:
- *         description: Non authentifié
- *       403:
- *         description: Non autorisé (pas le créateur ou admin)
- *       404:
- *         description: Projet non trouvé
- *       500:
- *         description: Erreur serveur
+ *         description: Projet supprimé.
+ *         content: { application/json: { schema: { type: object, properties: { message: { type: string, example: "Projet supprimé avec succès" }}}}}
+ *       400: { description: Impossible de supprimer (dépendances) ou ID invalide }
+ *       401: { description: Non authentifié }
+ *       403: { description: Non autorisé }
+ *       404: { description: Projet non trouvé }
+ *       500: { description: Erreur serveur }
  */
+// Le chemin Express reste '/:id' relatif au préfixe /api/projects
 router.delete("/:id", authenticateToken, projectController.deleteProject);
 
 module.exports = router;

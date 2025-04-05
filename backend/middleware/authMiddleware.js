@@ -1,30 +1,68 @@
-const jwt = require("jsonwebtoken")
-
+const jwt = require("jsonwebtoken");
+// Vous devriez utiliser une variable d'environnement pour votre secret JWT
+const JWT_SECRET = process.env.JWT_SECRET || "votre_secret_jwt_tres_long_et_securise"; // Changez ceci !
 
 exports.authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"]
-  const token = authHeader && authHeader.split(" ")[1]
+  const authHeader = req.headers["authorization"];
+  // Le token est généralement envoyé comme "Bearer VOTRE_TOKEN"
+  const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
 
   if (!token) {
-    return res.status(401).json({ message: "Accès non autorisé" })
+    // Pas de token fourni
+    return res.status(401).json({ message: "Accès non autorisé. Token manquant." });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || "0501a8f7373f89c8705966c7b6fbdc22025b2ffad6121f543354f2d5fe68de38b58d57751e302de6970c8098bb2afc8134f991fb9ae880c8adfebb2e5d915a75",
-     (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, userPayload) => {
     if (err) {
-      return res.status(403).json({ message: "Token invalide ou expiré" })
+      // Gestion spécifique des erreurs JWT
+      if (err.name === 'TokenExpiredError') {
+        return res.status(403).json({ message: "Token expiré." });
+      }
+      if (err.name === 'JsonWebTokenError') {
+         return res.status(403).json({ message: "Token invalide." });
+      }
+      // Autres erreurs possibles
+      return res.status(403).json({ message: "Échec de l'authentification du token." });
     }
 
-    req.user = user
-    next()
-  })
-}
+    // Le payload décodé (contenant id, username, role) est attaché à la requête
+    req.user = userPayload;
+    next(); // Passe au middleware ou au contrôleur suivant
+  });
+};
 
-
+// Middleware pour vérifier si l'utilisateur a le rôle 'Admin'
 exports.isAdmin = (req, res, next) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ message: "Accès réservé aux administrateurs" })
+  // Assurez-vous que authenticateToken a été exécuté avant
+  if (!req.user) {
+     return res.status(401).json({ message: "Utilisateur non authentifié." });
   }
 
-  next()
-}
+  // CORRECTION: Comparer avec "Admin" (majuscule) comme dans l'enum du schéma
+  if (req.user.role !== "Admin") {
+    return res.status(403).json({ message: "Accès refusé. Privilèges administrateur requis." });
+  }
+
+  next(); // L'utilisateur est admin, continuer
+};
+
+// Vous pourriez ajouter d'autres vérifications de rôle ici si nécessaire
+exports.isChefProjet = (req, res, next) => {
+   if (!req.user) {
+     return res.status(401).json({ message: "Utilisateur non authentifié." });
+  }
+  if (req.user.role !== "ChefProjet") {
+    return res.status(403).json({ message: "Accès refusé. Privilèges Chef de Projet requis." });
+  }
+  next();
+};
+
+exports.isSupplier = (req, res, next) => {
+   if (!req.user) {
+     return res.status(401).json({ message: "Utilisateur non authentifié." });
+  }
+  if (req.user.role !== "Supplier") {
+    return res.status(403).json({ message: "Accès refusé. Privilèges Fournisseur requis." });
+  }
+  next();
+};

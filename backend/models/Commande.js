@@ -2,60 +2,56 @@
 const mongoose = require('mongoose');
 
 const commandeSchema = new mongoose.Schema({
-  // String: name
+  // Correspond à 'name' dans l'UML
   name: {
     type: String,
-    required: [true, "Le nom de la commande est requis."],
+    required: [true, "Le nom/identifiant de la commande est requis."],
     trim: true,
   },
-  // String: type
+  // Correspond à 'type' dans l'UML
   type: {
     type: String,
     trim: true,
+    // Ex: "Achat Matériel", "Prestation Service", etc.
   },
-  // String: Statut
+  // Correspond à 'Statut' dans l'UML (nommé 'statut' en minuscules)
   statut: {
     type: String,
     required: [true, "Le statut de la commande est requis."],
     enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée'],
     default: 'En attente',
   },
-  // Date: DateCmd
+  // Correspond à 'DateCmd' dans l'UML (nommé 'dateCmd')
   dateCmd: {
     type: Date,
     required: [true, "La date de commande est requise."],
     default: Date.now,
   },
-  // Nombre: MontantTotal
+  // Correspond à 'MontantTotal' dans l'UML (nommé 'montantTotal')
   montantTotal: {
     type: Number,
     required: [true, "Le montant total est requis."],
     min: [0, "Le montant total ne peut pas être négatif."]
   },
-  // Fournisseur: FournisseurId
-  supplier: { // J'ai gardé 'supplier' comme dans votre code précédent
+
+  // --- Relations ---
+
+  // Correspond à 'Fournisseur: FournisseurId' dans l'UML
+  supplier: { // Nom du champ
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Supplier', // Assurez-vous que le modèle Fournisseur s'appelle 'Supplier'
-    required: [true, "Le fournisseur est requis."],
+    // IMPORTANT: Référence le modèle de base 'User' car Supplier est un discriminateur
+    ref: 'User',
+    required: [true, "Le fournisseur (utilisateur avec rôle Supplier) est requis."],
+    // Rappel: La logique applicative doit vérifier que le rôle de cet User est bien 'Supplier'.
   },
-  // Projet: ProjetId (Relation 1 Commande -> 1 Projet)
+  // Correspond à 'Projet: ProjetId' dans l'UML
   projet: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Project', // Nom du modèle Project
+    ref: 'Project', // Référence le modèle Project
     required: [true, "La commande doit être associée à un projet."]
   },
 
-  // --- AJOUT DE LA RELATION AVEC USER ---
-  // User: UserId (Relation 1 Commande -> 1 User)
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Référence au modèle User que vous avez fourni
-    required: [true, "L'utilisateur qui passe la commande est requis."]
-  },
-  // ------------------------------------
-
-  // !! PAS DE CHAMP resources: [...] ICI !!
-  // La liaison avec les ressources se fait via CommandeRessource
+  // Le champ 'user' a été retiré car non présent dans le diagramme UML de Commande
 
 }, {
   timestamps: true // Ajoute createdAt et updatedAt
@@ -63,9 +59,8 @@ const commandeSchema = new mongoose.Schema({
 
 // --- INDEX ---
 commandeSchema.index({ projet: 1 });
-commandeSchema.index({ supplier: 1 });
+commandeSchema.index({ supplier: 1 }); // Index sur la référence User (qui sera un Supplier)
 commandeSchema.index({ statut: 1 });
-commandeSchema.index({ user: 1 }); // Ajout d'un index pour les recherches par utilisateur
-
+// L'index sur 'user' a été retiré
 
 module.exports = mongoose.model('Commande', commandeSchema);
