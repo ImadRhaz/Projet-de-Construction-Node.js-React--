@@ -31,7 +31,8 @@ const options = {
     "./routes/projectRoutes.js",
     "./routes/taskRoutes.js", 
     "./routes/resourceRoutes.js",
-    "./routes/supplierRoutes.js"
+    "./routes/supplierRoutes.js",
+    "./routes/commandeRoutes.js"
   ],
 };
 
