@@ -1,338 +1,231 @@
 // routes/commandeRoutes.js
 const express = require("express");
 const router = express.Router();
+// Assurez-vous que ce chemin pointe correctement vers votre contrôleur
 const commandeController = require("../controllers/commandeController");
+// Assurez-vous que ce chemin pointe correctement vers votre middleware d'authentification
 const { authenticateToken } = require('../middleware/authMiddleware');
 
 /**
  * @swagger
  * tags:
- *   name: Commandes (Supplier)
- *   description: API pour la gestion des commandes par les fournisseurs (basée sur le modèle Commande simple). Authentification requise.
+ *   name: Commandes
+ *   description: API pour la gestion des commandes (création par ChefProjet sans fournisseur, assignation/màj statut par Supplier)
  */
 
 /**
  * @swagger
  * components:
  *   schemas:
- *     # --- Input Schema for Creating an Order by Supplier (Matches YOUR Model) ---
- *     CommandeSimpleInput:
+ *     # --- Input Schemas ---
+ *     CommandeCreateInput:
  *       type: object
- *       required:
- *         - name
- *         - montantTotal
- *         - projectId # Renamed from 'projet' for clarity in request
+ *       # supplierId n'est PAS requis ici
+ *       required: [name, montantTotal, projectId]
  *       properties:
- *         name:
- *           type: string
- *           description: Nom ou identifiant unique pour la commande.
- *           example: "Commande Fournitures Bureau #FB-002"
- *         type:
- *           type: string
- *           description: Type de commande (facultatif).
- *           example: "Achat Matériel"
- *         statut:
- *           type: string
- *           description: Statut initial (facultatif, défaut 'En attente' dans le modèle).
- *           enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée']
- *           default: 'En attente'
- *           example: "Validée" # Example if overriding default
- *         dateCmd:
- *           type: string
- *           format: date-time
- *           description: Date de la commande (facultatif, défaut Date.now() dans le modèle).
- *           example: "2024-07-25T09:30:00Z"
- *         montantTotal:
- *           type: number
- *           format: double
- *           description: Montant total de la commande (doit être >= 0).
- *           example: 350.99
- *           minimum: 0
- *         projectId: # Use projectId in request body for clarity
- *           type: string
- *           format: objectId
- *           description: ID du projet auquel la commande est associée.
- *           example: "65f1a8d8f1b9e3b4e8f0e123"
- *       # NOTE: 'supplier' n'est PAS dans l'input, il est déterminé par l'utilisateur connecté.
+ *         name: { type: string, example: "Commande Béton C25/30" }
+ *         type: { type: string, example: "Matériaux Gros Oeuvre" }
+ *         statut: { type: string, enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée'], default: 'En attente' }
+ *         dateCmd: { type: string, format: date-time, example: "2024-10-01T08:00:00Z" }
+ *         montantTotal: { type: number, format: double, minimum: 0, example: 1250.75 }
+ *         projectId: { type: string, format: objectId, example: "65f1a8d8f1b9e3b4e8f0e123" }
  *
- *     # --- Response Schema for an Order (Matches YOUR Model + Populate) ---
- *     CommandeSimpleResponse:
+ *     CommandeStatusUpdateInput:
+ *        type: object
+ *        required: [statut]
+ *        properties:
+ *          statut: { type: string, enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée'], example: "En cours de livraison" }
+ *
+ *     # --- Response Schemas ---
+ *     CommandeResponse:
  *       type: object
  *       properties:
- *         _id:
- *           type: string
- *           format: objectId
- *         name:
- *           type: string
- *         type:
- *           type: string
- *         statut:
- *           type: string
- *           enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée']
- *         dateCmd:
- *           type: string
- *           format: date-time
- *         montantTotal:
- *           type: number
- *           format: double
- *         projet: # Field name from model
- *           $ref: '#/components/schemas/ProjectSummaryResponse' # Populated
- *         supplier: # Field name from model
- *           $ref: '#/components/schemas/SupplierSummaryResponse' # Populated
- *         createdAt:
- *           type: string
- *           format: date-time
- *         updatedAt:
- *           type: string
- *           format: date-time
+ *         _id: { type: string, format: objectId }
+ *         name: { type: string }
+ *         type: { type: string }
+ *         statut: { type: string, enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée'] }
+ *         dateCmd: { type: string, format: date-time }
+ *         montantTotal: { type: number, format: double }
+ *         projet: { $ref: '#/components/schemas/ProjectSummaryResponse' }
+ *         supplier: { $ref: '#/components/schemas/SupplierSummaryResponse' } # Sera null si non assigné
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
  *
- *     # --- Helper Schemas for Populated Fields (Adjust fields based on controller's 'select') ---
  *     ProjectSummaryResponse:
  *       type: object
+ *       description: Informations résumées d'un projet pour l'affichage dans une commande.
  *       properties:
  *         _id:
  *           type: string
  *           format: objectId
  *         name:
  *           type: string
- *         status: # Based on controller populate
+ *         status:
  *           type: string
- *         # Add description if needed/populated
+ *         chefProjet: # Ajouté pour référence potentielle
+ *           type: string
+ *           format: objectId
+ *           description: ID du Chef de Projet assigné à ce projet.
  *
  *     SupplierSummaryResponse:
  *       type: object
+ *       description: Informations résumées d'un fournisseur pour l'affichage dans une commande.
  *       properties:
  *         _id:
  *           type: string
  *           format: objectId
  *         username:
  *           type: string
- *         contact: # Based on controller populate
- *            type: string
- *         # Add phone, address, email etc. if needed/populated
- *
- *     # --- Schema for Updating Status ---
- *     CommandeStatusUpdateInput:
- *       type: object
- *       required:
- *         - statut # Match model field name
- *       properties:
- *         statut: # Match model field name
+ *         contact: # Exemple de champ supplémentaire
  *           type: string
- *           description: Le nouveau statut valide de la commande.
- *           enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée']
- *           example: "Livrée"
+ *           description: Nom du contact principal du fournisseur.
  *
- *   # --- Security Definition ---
  *   securitySchemes:
  *     bearerAuth:
  *       type: http
  *       scheme: bearer
  *       bearerFormat: JWT
- *
  */
 
-// --- ROUTES SPECIFIC TO SUPPLIERS (Using the Corrected Controller) ---
-
-/**
- * @swagger
- * /commandes/my:
- *   get:
- *     summary: Récupérer les commandes du fournisseur connecté
- *     tags: [Commandes (Supplier)]
- *     security:
- *       - bearerAuth: []
- *     description: Retourne la liste des commandes créées par le fournisseur actuellement authentifié (modèle simple). Rôle 'Supplier' requis.
- *     responses:
- *       200:
- *         description: Liste des commandes du fournisseur.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/CommandeSimpleResponse' # Use correct response schema
- *       401:
- *         description: Non authentifié.
- *       403:
- *         description: Accès refusé (rôle non Supplier).
- *       500:
- *         description: Erreur serveur.
- */
-router.get("/my",
-    authenticateToken,
-    commandeController.getMyCommandes
-);
-
-/**
- * @swagger
- * /commandes/{id}:
- *   get:
- *     summary: Récupérer une commande spécifique du fournisseur connecté
- *     tags: [Commandes (Supplier)]
- *     security:
- *       - bearerAuth: []
- *     description: Retourne les détails d'une commande spécifique si elle appartient au fournisseur authentifié (modèle simple). Rôle 'Supplier' requis.
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *           format: objectId
- *         required: true
- *         description: ID de la commande à récupérer.
- *     responses:
- *       200:
- *         description: Détails de la commande.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/CommandeSimpleResponse' # Use correct response schema
- *       400:
- *         description: Format de l'ID de commande invalide.
- *       401:
- *         description: Non authentifié.
- *       403:
- *         description: Accès refusé (rôle non Supplier).
- *       404:
- *         description: Commande non trouvée ou n'appartient pas au fournisseur.
- *       500:
- *         description: Erreur serveur.
- */
-router.get("/:id",
-    authenticateToken,
-    commandeController.getCommandeById
-);
-
+// --- ROUTES ---
 
 /**
  * @swagger
  * /commandes:
  *   post:
- *     summary: Créer une nouvelle commande (Supplier uniquement, modèle simple)
- *     tags: [Commandes (Supplier)]
- *     security:
- *       - bearerAuth: []
- *     description: Permet à un fournisseur connecté de créer une nouvelle commande (basée sur nom, montant, projet, etc.). Le fournisseur est automatiquement assigné. Rôle 'Supplier' requis.
+ *     summary: Créer une nouvelle commande (ChefProjet uniquement, SANS fournisseur initial)
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: Permet à un Chef de Projet de créer une commande SANS spécifier le fournisseur. Le fournisseur sera assigné lors de la première mise à jour de statut par un Supplier. Rôle 'ChefProjet' requis.
  *     requestBody:
  *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/CommandeSimpleInput' # Use correct input schema
+ *       content: { application/json: { schema: { $ref: '#/components/schemas/CommandeCreateInput' } } }
  *     responses:
- *       201:
- *         description: Commande créée avec succès.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/CommandeSimpleResponse' # Use correct response schema
- *       400:
- *         description: Données invalides (champs requis manquants, montant négatif, ID projet invalide, format date invalide, etc.).
- *       401:
- *         description: Non authentifié.
- *       403:
- *         description: Accès refusé (rôle non Supplier).
- *       404:
- *         description: Projet associé non trouvé.
- *       500:
- *         description: Erreur serveur.
+ *       201: { description: Commande créée (avec supplier=null), content: { application/json: { schema: { $ref: '#/components/schemas/CommandeResponse' } } } }
+ *       400: { description: Données invalides }
+ *       401: { description: Non authentifié }
+ *       403: { description: Accès refusé (rôle incorrect) }
+ *       404: { description: Projet non trouvé }
+ *       500: { description: Erreur serveur }
  */
-router.post("/",
-    authenticateToken,
-    commandeController.createCommande
-);
+router.post("/", authenticateToken, commandeController.createCommande); // Le contrôleur gère la vérification ChefProjet
 
+/**
+ * @swagger
+ * /commandes:
+ *   get:
+ *     summary: Récupérer toutes les commandes (Tous rôles authentifiés)
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: Retourne la liste complète de toutes les commandes enregistrées (assignées ou non). Accessible par tout utilisateur authentifié.
+ *     responses:
+ *       200: { description: Liste des commandes, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CommandeResponse' } } } } }
+ *       401: { description: Non authentifié }
+ *       # 403 n'est plus pertinent ici car tous les rôles authentifiés sont autorisés
+ *       500: { description: Erreur serveur }
+ */
+router.get("/", authenticateToken, commandeController.getAllCommandes); // Le contrôleur n'a plus de vérification de rôle Admin ici
+
+/**
+ * @swagger
+ * /commandes/my:
+ *   get:
+ *     summary: (Supplier) Récupérer MES commandes déjà assignées
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: Retourne UNIQUEMENT les commandes déjà assignées au fournisseur connecté. Rôle 'Supplier' requis. Ne montre pas les commandes non assignées.
+ *     responses:
+ *       200: { description: Liste des commandes assignées au fournisseur, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CommandeResponse' } } } } }
+ *       401: { description: Non authentifié }
+ *       403: { description: Accès refusé (rôle non Supplier) }
+ *       500: { description: Erreur serveur }
+ */
+router.get("/my", authenticateToken, commandeController.getMyCommandes); // Le contrôleur gère la vérification Supplier
+
+/**
+ * @swagger
+ * /commandes/projet/{projectId}:
+ *   get:
+ *     summary: Récupérer les commandes par ID de Projet
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: Retourne les commandes d'un projet (assignées ou non). Accessible par Admin ou ChefProjet du projet.
+ *     parameters:
+ *       - { in: path, name: projectId, schema: { type: string, format: objectId }, required: true, description: ID du Projet }
+ *     responses:
+ *       200: { description: Liste des commandes du projet, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CommandeResponse' } } } } }
+ *       400: { description: Format ID Projet invalide }
+ *       401: { description: Non authentifié }
+ *       403: { description: Accès refusé (pas Admin ni Chef du projet) }
+ *       404: { description: Projet non trouvé }
+ *       500: { description: Erreur serveur }
+ */
+router.get("/projet/:projectId", authenticateToken, commandeController.getCommandesByProjetId); // Le contrôleur gère la vérification d'accès
+
+/**
+ * @swagger
+ * /commandes/{id}:
+ *   get:
+ *     summary: Récupérer une commande spécifique par son ID
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: Retourne une commande unique. Accessible par Admin, fournisseur assigné (si un existe), ou ChefProjet lié.
+ *     parameters:
+ *       - { in: path, name: id, schema: { type: string, format: objectId }, required: true, description: ID de la commande }
+ *     responses:
+ *       200: { description: Détails de la commande, content: { application/json: { schema: { $ref: '#/components/schemas/CommandeResponse' } } } }
+ *       400: { description: Format ID Commande invalide }
+ *       401: { description: Non authentifié }
+ *       403: { description: Accès refusé (rôle/relation non autorisé) }
+ *       404: { description: Commande non trouvée }
+ *       500: { description: Erreur serveur }
+ */
+router.get("/:id", authenticateToken, commandeController.getCommandeById); // Le contrôleur gère la vérification d'accès
 
 /**
  * @swagger
  * /commandes/{id}/status:
  *   patch:
- *     summary: Mettre à jour le statut d'une commande (Supplier propriétaire)
- *     tags: [Commandes (Supplier)]
- *     security:
- *       - bearerAuth: []
- *     description: Permet au fournisseur propriétaire de mettre à jour le statut de sa commande via PATCH (modèle simple). Rôle 'Supplier' requis.
+ *     summary: (Supplier) Mettre à jour le statut et/ou s'assigner une commande
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: |
+ *       Permet à un fournisseur connecté de mettre à jour le statut d'une commande.
+ *       - Si la commande n'a pas encore de fournisseur (`supplier` est null), cet appel assignera le fournisseur connecté à la commande EN PLUS de mettre à jour le statut.
+ *       - Si la commande est déjà assignée à CE fournisseur, seul le statut sera mis à jour.
+ *       - Si la commande est déjà assignée à un AUTRE fournisseur, l'accès sera refusé (403).
+ *       Rôle 'Supplier' requis.
  *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *           format: objectId
- *         required: true
- *         description: ID de la commande dont le statut doit être mis à jour.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/CommandeStatusUpdateInput' # Use correct input schema
+ *       - { in: path, name: id, schema: { type: string, format: objectId }, required: true, description: ID de la commande }
+ *     requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CommandeStatusUpdateInput' } } } }
  *     responses:
- *       200:
- *         description: Statut de la commande mis à jour.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/CommandeSimpleResponse' # Use correct response schema
- *       400:
- *         description: Format ID invalide ou statut manquant/invalide dans le corps de la requête.
- *       401:
- *         description: Non authentifié.
- *       403:
- *         description: Accès refusé (rôle non Supplier).
- *       404:
- *         description: Commande non trouvée ou n'appartient pas au fournisseur.
- *       500:
- *         description: Erreur serveur.
+ *       200: { description: Statut mis à jour (et fournisseur assigné si c'était la première fois), content: { application/json: { schema: { $ref: '#/components/schemas/CommandeResponse' } } } }
+ *       400: { description: Format ID invalide ou statut manquant/invalide }
+ *       401: { description: Non authentifié }
+ *       403: { description: Accès refusé (rôle non Supplier ou commande assignée à un autre) }
+ *       404: { description: Commande non trouvée }
+ *       500: { description: Erreur serveur }
  */
-router.patch("/:id/status", // Using PATCH for partial update
-    authenticateToken,
-    commandeController.updateCommandeStatus
-);
+router.patch("/:id/status", authenticateToken, commandeController.updateCommandeStatus); // Le contrôleur gère l'assignation/màj
 
 /**
  * @swagger
  * /commandes/{id}:
  *   delete:
- *     summary: Supprimer une commande (Supplier propriétaire ou Admin)
- *     tags: [Commandes (Supplier)]
- *     security:
- *       - bearerAuth: []
- *     description: Permet au fournisseur propriétaire (ou à un Admin) de supprimer une de ses commandes (modèle simple). Les références associées seront nettoyées.
+ *     summary: Supprimer une commande (Admin ou Supplier assigné)
+ *     tags: [Commandes]
+ *     security: [bearerAuth: []]
+ *     description: Permet à l'Admin ou au fournisseur assigné (s'il y en a un) de supprimer une commande.
  *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *           format: objectId
- *         required: true
- *         description: ID de la commande à supprimer.
+ *       - { in: path, name: id, schema: { type: string, format: objectId }, required: true, description: ID de la commande }
  *     responses:
- *       200:
- *         description: Commande supprimée avec succès.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Commande supprimée avec succès."
- *       400:
- *         description: Format de l'ID de commande invalide.
- *       401:
- *         description: Non authentifié.
- *       403:
- *         description: Accès refusé (pas le propriétaire ou non Admin).
- *       404:
- *         description: Commande non trouvée.
- *       500:
- *         description: Erreur serveur.
+ *       200: { description: Commande supprimée }
+ *       400: { description: Format ID invalide }
+ *       401: { description: Non authentifié }
+ *       403: { description: Accès refusé (pas Admin ni fournisseur assigné) }
+ *       404: { description: Commande non trouvée }
+ *       500: { description: Erreur serveur }
  */
-router.delete("/:id",
-    authenticateToken,
-    commandeController.deleteCommande // Controller function now exists
-);
+router.delete("/:id", authenticateToken, commandeController.deleteCommande); // Le contrôleur gère la vérification d'accès
 
-
-module.exports = router;
+module.exports = router; // Ne pas oublier d'exporter le routeur
