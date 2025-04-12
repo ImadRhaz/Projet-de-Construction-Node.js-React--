@@ -15,6 +15,7 @@ const taskResourceRoutes = require("./routes/taskResourceRoutes");
 const productTypeRoutes = require('./routes/productTypeRoutes');
 const commandeRoutes = require('./routes/commandeRoutes');
 const commandItemRoutes = require('./routes/commandItemRoutes');
+const defaultMongoUri = "mongodb://127.0.0.1:27017/Natec?replicaSet=rs0";
 
 const { authenticateToken } = require("./middleware/authMiddleware")
 
@@ -28,8 +29,11 @@ app.use(cors())
 app.use(express.json())
 
 
+
+
+
 mongoose
-  .connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/Natec")
+  .connect(process.env.MONGODB_URI || defaultMongoUri) // Utilise la nouvelle URI par défaut
   .then(() => console.log("Connexion à MongoDB réussie"))
   .catch((err) => console.error("Erreur de connexion à MongoDB:", err))
 

@@ -1,3 +1,4 @@
+// routes/commandeRoutes.js
 const express = require("express");
 const router = express.Router();
 const commandeController = require("../controllers/commandeController");
@@ -6,7 +7,7 @@ const commandeController = require("../controllers/commandeController");
 const {
     authenticateToken,
     isChefProjet,
-    isSupplier,
+    isSupplier, // Gardé ici car pourrait être utile pour d'autres routes Commandes
     isAdmin
 } = require('../middleware/authMiddleware');
 
@@ -23,7 +24,9 @@ const {
  *   schemas:
  *     CommandeCreateInput:
  *       type: object
- *       required: [name, montantTotal, projetId, fournisseurId, items]
+ *       # --- MODIFICATION ICI ---
+ *       required: [name, montantTotal, projetId, items] # fournisseurId supprimé
+ *       # --- FIN MODIFICATION ---
  *       properties:
  *         name:
  *           type: string
@@ -44,10 +47,13 @@ const {
  *           type: string
  *           format: objectId
  *           example: "65f1a8d8f1b9e3b4e8f0e123"
- *         fournisseurId:
- *           type: string
- *           format: objectId
- *           example: "65f1a8d8f1b9e3b4e8f0e456"
+ *         # --- MODIFICATION ICI ---
+ *         # La propriété fournisseurId a été supprimée
+ *         # fournisseurId:
+ *         #   type: string
+ *         #   format: objectId
+ *         #   example: "65f1a8d8f1b9e3b4e8f0e456"
+ *         # --- FIN MODIFICATION ---
  *         items:
  *           type: array
  *           items:
@@ -68,6 +74,7 @@ const {
  *                 example: 125.50
 
  *     CommandeResponse:
+ *       # ...(inchangé)...
  *       type: object
  *       properties:
  *         _id:
@@ -79,14 +86,18 @@ const {
  *           type: string
  *         statutCmd:
  *           type: string
- *           enum: ['Soumise', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée']
+ *           # Mise à jour de l'enum pour refléter le modèle
+ *           enum: ['EnAttenteAssignation', 'Soumise', 'Partiellement Validée', 'Totalement Validée', 'Annulée']
  *         dateCmd:
  *           type: string
  *           format: date-time
  *         montantTotal:
  *           type: number
+ *         # fournisseurId peut être null maintenant
  *         fournisseurId:
  *           type: string
+ *           format: objectId
+ *           nullable: true
  *         projetId:
  *           type: string
  *         createdAt:
@@ -95,6 +106,7 @@ const {
  *         updatedAt:
  *           type: string
  *           format: date-time
+
 
  *   securitySchemes:
  *     bearerAuth:
@@ -107,23 +119,23 @@ const {
  * @swagger
  * /commandes:
  *   post:
- *     summary: Créer une nouvelle commande (ChefProjet uniquement)
+ *     summary: Créer une nouvelle demande de commande (ChefProjet uniquement)
  *     tags: [Commandes]
  *     security:
  *       - bearerAuth: []
  *     description: |
- *       Permet à un Chef de Projet de créer une commande avec des items.
- *       La commande sera créée avec le statut "Soumise".
+ *       Permet à un Chef de Projet de créer une demande de commande avec des items, sans assigner de fournisseur immédiatement.
+ *       La commande sera créée avec le statut "EnAttenteAssignation" (ou similaire, selon votre modèle) et fournisseurId=null.
  *       Une transaction est utilisée pour garantir l'intégrité des données.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/CommandeCreateInput'
+ *             $ref: '#/components/schemas/CommandeCreateInput' # Fait référence au schéma mis à jour
  *     responses:
  *       201:
- *         description: Commande créée avec succès
+ *         description: Commande créée avec succès (en attente d'assignation fournisseur)
  *         content:
  *           application/json:
  *             schema:
@@ -132,9 +144,9 @@ const {
  *         description: |
  *           Erreur de validation :
  *           - Items manquants ou invalides
- *           - Champs obligatoires manquants
+ *           - Champs obligatoires (name, projetId, montantTotal, items) manquants
  *           - ProductType introuvable
- *           - Projet ou fournisseur introuvable
+ *           - Projet introuvable
  *       401:
  *         description: Non authentifié
  *       403:
@@ -145,8 +157,8 @@ const {
 router.post(
     "/",
     authenticateToken,
-    isChefProjet,
-    commandeController.createCommande
+    isChefProjet, // Seul le chef de projet crée la demande initiale
+    commandeController.createCommande // Le contrôleur modifié n'utilise plus fournisseurId
 );
 
 /**
@@ -167,5 +179,18 @@ router.post(
 router.get("/test", (req, res) => {
     res.send("API Commandes opérationnelle");
 });
+
+// --- AJOUT FUTUR : Route pour assigner un fournisseur ---
+/*
+ * @swagger
+ * /commandes/{id}/assign-supplier:
+ *   patch:
+ *     summary: Assigner un fournisseur à une commande existante
+ *     tags: [Commandes]
+ *     // ... (définir sécurité, paramètres, requestBody avec fournisseurId, responses)
+ */
+// router.patch('/:id/assign-supplier', authenticateToken, /* peut-être isChefProjet ou isAdmin */, commandeController.assignSupplierToCommande);
+// --- FIN AJOUT FUTUR ---
+
 
 module.exports = router;

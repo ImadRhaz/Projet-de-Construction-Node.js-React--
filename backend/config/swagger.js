@@ -34,7 +34,7 @@ const options = {
     "./routes/supplierRoutes.js",
     "./routes/commandeRoutes.js",
     "./routes/productTypeRoutes.js",
-    "./routes/commandeItemRoutes.js",
+    "./routes/commandItemRoutes.js",
   ],
 };
 
