@@ -11,8 +11,10 @@ const resourceRoutes = require("./routes/resourceRoutes")
 const supplierRoutes = require("./routes/supplierRoutes")
 const authRoutes = require("./routes/authRoutes")
 const swaggerDocs = require("./config/swagger");
-const taskResourceRoutes = require("./routes/taskResourceRoutes"); // Importer les routes
+const taskResourceRoutes = require("./routes/taskResourceRoutes");
+const productTypeRoutes = require('./routes/productTypeRoutes');
 const commandeRoutes = require('./routes/commandeRoutes');
+const commandItemRoutes = require('./routes/commandItemRoutes');
 
 const { authenticateToken } = require("./middleware/authMiddleware")
 
@@ -37,8 +39,11 @@ mongoose
   app.use("/api/tasks", authenticateToken, taskRoutes)
   app.use("/api/resources", authenticateToken, resourceRoutes)
   app.use("/api/suppliers", authenticateToken, supplierRoutes)
-  app.use('/api/task-resources', authenticateToken, taskResourceRoutes); // Monter les routes
+  app.use('/api/task-resources', authenticateToken, taskResourceRoutes);
   app.use('/api/commandes', authenticateToken, commandeRoutes);
+  app.use('/api/product-types', productTypeRoutes);
+  app.use('/api/command-items', commandItemRoutes);
+  
   swaggerDocs(app);
 
 app.get("/", (req, res) => {

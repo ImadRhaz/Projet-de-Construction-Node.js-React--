@@ -1,43 +1,35 @@
-// models/Resource.js
 const mongoose = require("mongoose");
 
-const resourceSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, "Le nom de la ressource est requis."],
-    trim: true,
-    unique: true // <-- GARDEZ CECI. Crée automatiquement un index unique sur 'name'.
+const resourceStockSchema = new mongoose.Schema({
+  productTypeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductType',
+    required: [true, "La référence au type de produit est requise."]
   },
-  type: {
-    type: String,
-    enum: ["Matériau", "Équipement", "Personnel", "Logiciel", "Autre"],
-    required: [true, "Le type de la ressource est requis."],
+  commandItemId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CommandItem',
+    required: [true, "La référence à l'item de commande source est requise."],
+    unique: true // Gardez UNIQUEMENT cette déclaration d'unicité
   },
-  quantityAvailable: {
+  quantiteDisponible: {
     type: Number,
-    required: [true, "La quantité disponible est requise."],
+    required: [true, "La quantité initiale disponible est requise lors de la création."],
     min: [0, "La quantité disponible ne peut pas être négative."]
   },
-  unit: {
-    type: String,
-    required: [true, "L'unité de mesure est requise."],
-    trim: true,
-  },
-  supplier: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Référence le modèle de base User
-    required: [true, "Le fournisseur (utilisateur avec rôle Supplier) est requis."]
-    // Rappel: La logique applicative doit vérifier le rôle.
-  },
+  dateEntreeStock: {
+    type: Date,
+    required: [true, "La date d'entrée en stock est requise."],
+    default: Date.now
+  }
 }, {
-  timestamps: true // Gère createdAt et updatedAt
+  timestamps: true
 });
 
-// --- Index ---
-// L'index sur 'name' est automatiquement créé par 'unique: true' ci-dessus.
+// Index - SUPPRIMEZ la ligne suivante car l'unicité est déjà gérée dans la définition du champ
+// resourceStockSchema.index({ commandItemId: 1 }, { unique: true }); 
 
-// Vous pouvez garder les autres index s'ils sont utiles pour vos requêtes
-resourceSchema.index({ type: 1 });
-resourceSchema.index({ supplier: 1 }); // Index sur la référence User (qui sera un Supplier)
+// Gardez uniquement cet index pour les recherches par type de produit
+resourceStockSchema.index({ productTypeId: 1 });
 
-module.exports = mongoose.model("Resource", resourceSchema);
+module.exports = mongoose.model("Resource", resourceStockSchema);

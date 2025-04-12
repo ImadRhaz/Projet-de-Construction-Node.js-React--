@@ -2,54 +2,53 @@
 const mongoose = require('mongoose');
 
 const commandeSchema = new mongoose.Schema({
-  name: {
+  name: { // Nom/identifiant unique pour cette commande
     type: String,
     required: [true, "Le nom/identifiant de la commande est requis."],
     trim: true,
+    // unique: true, // Envisagez si le nom doit être unique
   },
-  type: {
+  type: { // Type de commande (optionnel)
     type: String,
     trim: true,
   },
-  statut: {
+  statutCmd: { // Renommé 'statut' en 'statutCmd' pour clarté
     type: String,
-    required: [true, "Le statut de la commande est requis."],
-    enum: ['En attente', 'Validée', 'Refusée', 'En cours de livraison', 'Livrée', 'Annulée'],
-    default: 'En attente',
+    required: true,
+    enum: ['Soumise', 'Partiellement Validée', 'Totalement Validée', 'Annulée', /* autres statuts globaux */],
+    default: 'Soumise',
   },
   dateCmd: {
     type: Date,
     required: [true, "La date de commande est requise."],
     default: Date.now,
   },
-  montantTotal: {
+  montantTotal: { // Pourrait être calculé dynamiquement
     type: Number,
-    required: [true, "Le montant total est requis."],
+    required: [true, "Le montant total est requis."], // Ou calculé plus tard
     min: [0, "Le montant total ne peut pas être négatif."]
   },
 
   // --- Relations ---
-
-  supplier: { // Nom du champ
+  fournisseurId: { // Renommé pour clarté (correspond à FournisseurId dans UML)
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Référence 'User'
-    // >>> PAS REQUIS À LA CRÉATION <<<
-    required: false, // Important pour cette logique
-    default: null    // Valeur par défaut explicite
+    ref: 'User', // Référence User (qui sera un Fournisseur via discriminateur)
+    required: [true, "La commande doit être associée à un fournisseur."]
   },
-  projet: {
+  projetId: { // Renommé pour clarté (correspond à ProjetId dans UML)
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Project', // Référence le modèle Project
+    ref: 'Project',
     required: [true, "La commande doit être associée à un projet."]
   },
+  // La liste des CommandItem est obtenue via une requête sur CommandItem avec ce CommandeId
 
 }, {
   timestamps: true // Ajoute createdAt et updatedAt
 });
 
 // --- INDEX ---
-commandeSchema.index({ projet: 1 });
-commandeSchema.index({ supplier: 1 }); // Index sur supplier (qui peut être null)
-commandeSchema.index({ statut: 1 });
+commandeSchema.index({ projetId: 1 });
+commandeSchema.index({ fournisseurId: 1 });
+commandeSchema.index({ statutCmd: 1 });
 
 module.exports = mongoose.model('Commande', commandeSchema);

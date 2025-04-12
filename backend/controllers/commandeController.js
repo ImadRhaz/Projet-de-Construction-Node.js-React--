@@ -1,197 +1,126 @@
 // controllers/commandeController.js
-const mongoose = require("mongoose");
-const Commande = require("../models/Commande");
-const User = require("../models/User");
-const Supplier = require("../models/Supplier");
-const Project = require("../models/Project");
+const mongoose = require('mongoose');
+const Commande = require('../models/Commande'); // Ajuste chemin
+const CommandItem = require('../models/CommandItem'); // Ajuste chemin
+const ProductType = require('../models/ProductType'); // Nécessaire pour validation
+const Project = require('../models/Project'); // Nécessaire pour validation
+const User = require('../models/User'); // Nécessaire pour validation fournisseur
 
-// --- CREATE COMMANDE (par ChefProjet, SANS fournisseur initial) ---
+// --- Méthode pour créer une nouvelle commande et ses items ---
+// Correspond à l'étape 3: Soumission (Enregistrement BDD) du processus global
 exports.createCommande = async (req, res) => {
-    // ... (Code inchangé)
+    const session = await mongoose.startSession(); // Démarrer une session pour la transaction
+    session.startTransaction(); // Commencer la transaction
+
     try {
-        const { name, type, statut, dateCmd, montantTotal, projectId } = req.body;
-        const chefProjetId = req.user?.id;
-        if (!chefProjetId) return res.status(401).json({ message: "Utilisateur non authentifié." });
-        if (req.user.role !== 'ChefProjet') return res.status(403).json({ message: "Accès refusé. Seul un Chef de Projet peut créer une commande." });
-        if (!name) return res.status(400).json({ message: "Le nom/identifiant de la commande est requis." });
-        if (montantTotal === undefined || montantTotal === null || isNaN(montantTotal) || montantTotal < 0) return res.status(400).json({ message: "Le montant total doit être un nombre positif." });
-        if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) return res.status(400).json({ message: "Un ID de projet valide est requis." });
-        const projectExists = await Project.findById(projectId);
-        if (!projectExists) return res.status(404).json({ message: "Projet non trouvé." });
-        const commandeData = { name, ...(type && { type }), ...(statut && { statut }), ...(dateCmd && { dateCmd }), montantTotal, projet: projectId };
-        const newCommande = new Commande(commandeData);
-        const savedCommande = await newCommande.save();
-        await Project.findByIdAndUpdate(projectId, { $addToSet: { commandes: savedCommande._id } });
-        const commandeResponse = await Commande.findById(savedCommande._id)
-            .populate({ path: 'projet', select: 'name _id status' })
-            .populate({ path: 'supplier', select: 'username contact _id' });
-        res.status(201).json(commandeResponse);
-    } catch (error) {
-        console.error("Erreur createCommande:", error);
-        if (error.name === 'ValidationError') return res.status(400).json({ message: "Erreur de validation.", details: Object.values(error.errors).map(el => el.message) });
-        if (error.name === 'CastError') return res.status(400).json({ message: `Format invalide pour le champ '${error.path}'.` });
-        res.status(500).json({ message: "Erreur serveur lors de la création.", error: error.message });
-    }
-};
+        const { items, ...commandeData } = req.body; // Sépare les items du reste
 
-// --- GET ALL COMMANDES (Accessible par TOUS les rôles authentifiés) ---
-exports.getAllCommandes = async (req, res) => {
-    try {
-        // >>> MODIFICATION : Vérification du rôle Admin SUPPRIMÉE <<<
-        // if (req.user.role !== 'Admin') {
-        //     return res.status(403).json({ message: "Accès refusé. Réservé aux administrateurs." });
-        // }
-        // Le middleware authenticateToken garantit déjà que req.user existe si on arrive ici.
+        // 1. Validation de base des entrées (reçues du front-end après l'étape 2 interactive)
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ success: false, message: "La commande doit contenir au moins un article (items)." });
+        }
 
-        // Récupération de toutes les commandes
-        const commandes = await Commande.find({})
-            .populate('projet', 'name status _id chefProjet')
-            .populate('supplier', 'username contact _id')
-            .sort({ createdAt: -1 });
+        if (!commandeData.projetId || !commandeData.fournisseurId || !commandeData.name ) {
+             await session.abortTransaction();
+             session.endSession();
+             return res.status(400).json({ success: false, message: "Les champs projetId, fournisseurId et name sont requis pour la commande." });
+        }
 
-        res.status(200).json(commandes);
+        // 2. Validation des IDs et quantités des items (vérifie que les choix du front-end sont valides)
+        const productTypeIds = items.map(item => item.productTypeId);
+        // Vérifier l'existence de tous les ProductTypes en une seule requête
+        const existingProductTypes = await ProductType.find({ '_id': { $in: productTypeIds } }).session(session).select('_id');
+        const existingProductTypeIds = new Set(existingProductTypes.map(pt => pt._id.toString()));
 
-    } catch (error) {
-        console.error("Erreur getAllCommandes:", error);
-        res.status(500).json({
-            message: "Erreur serveur lors de la récupération de toutes les commandes.",
-            error: error.message
+        for (const item of items) {
+            if (!item.productTypeId || !item.quantiteCommandee || item.quantiteCommandee <= 0) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ success: false, message: `Item invalide: productTypeId et quantiteCommandee (>0) sont requis. Problème avec l'item pour productTypeId ${item.productTypeId || 'inconnu'}.` });
+            }
+            if (!existingProductTypeIds.has(item.productTypeId.toString())) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ success: false, message: `Le ProductType avec l'ID ${item.productTypeId} n'existe pas.` });
+            }
+            // Ajouter d'autres validations par item si nécessaire
+        }
+
+        // 3. Validation des IDs projet et fournisseur
+        const projectExists = await Project.findById(commandeData.projetId).session(session);
+        if (!projectExists) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ success: false, message: `Le Projet avec l'ID ${commandeData.projetId} n'existe pas.` });
+        }
+        const supplierExists = await User.findOne({ _id: commandeData.fournisseurId /*, role: 'fournisseur' */ }).session(session);
+        if (!supplierExists) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ success: false, message: `Le Fournisseur (User) avec l'ID ${commandeData.fournisseurId} n'existe pas ou n'a pas le bon rôle.` });
+        }
+
+
+        // 4. Créer l'en-tête de la Commande dans la BDD
+        const newCommande = new Commande({
+            name: commandeData.name,
+            type: commandeData.type,
+            statutCmd: 'Soumise', // Statut initial de la commande globale
+            dateCmd: commandeData.dateCmd || Date.now(),
+            montantTotal: commandeData.montantTotal,
+            fournisseurId: commandeData.fournisseurId,
+            projetId: commandeData.projetId,
         });
-    }
-};
+        const savedCommande = await newCommande.save({ session });
 
-// --- GET COMMANDES BY PROJECT ID (Admin or Project's ChefProjet) ---
-exports.getCommandesByProjetId = async (req, res) => {
-    // ... (Code inchangé)
-     try {
-        const projectId = req.params.projectId;
-        const userId = req.user?.id;
-        const userRole = req.user?.role;
-        if (!mongoose.Types.ObjectId.isValid(projectId)) return res.status(400).json({ message: "Format ID Projet invalide." });
-        if (!userId) return res.status(401).json({ message: "Utilisateur non authentifié." });
-        const project = await Project.findById(projectId).select('chefProjet name');
-        if (!project) return res.status(404).json({ message: "Projet non trouvé." });
-        const isProjectManager = project.chefProjet?.toString() === userId;
-        const isAdmin = userRole === 'Admin';
-        if (!isAdmin && !isProjectManager) return res.status(403).json({ message: "Accès refusé." });
-        const commandes = await Commande.find({ projet: projectId })
-            .populate('projet', 'name status _id')
-            .populate('supplier', 'username contact _id')
-            .sort({ dateCmd: -1 });
-        res.status(200).json(commandes);
+        // 5. Préparer et créer les CommandItems dans la BDD
+        const commandItemsData = items.map(item => ({
+            commandeId: savedCommande._id,
+            productTypeId: item.productTypeId,
+            quantiteCommandee: item.quantiteCommandee,
+            prixUnitaire: item.prixUnitaire,
+            statutLigne: 'Soumis' // Statut initial de chaque ligne
+        }));
+        const createdItems = await CommandItem.insertMany(commandItemsData, { session });
+
+        // 6. Si tout réussit, commiter la transaction (rend les changements permanents)
+        await session.commitTransaction();
+        session.endSession();
+
+        // 7. Renvoyer la réponse de succès
+        res.status(201).json({ success: true, data: savedCommande });
+
     } catch (error) {
-        console.error("Erreur getCommandesByProjetId:", error);
-        res.status(500).json({ message: "Erreur serveur.", error: error.message });
-    }
-};
-
-// --- GET MY COMMANDES (Supplier getting their own *assigned* commandes) ---
-exports.getMyCommandes = async (req, res) => {
-    // ... (Code inchangé)
-     try {
-        const supplierId = req.user?.id;
-        if (!supplierId) return res.status(401).json({ message: "Utilisateur non authentifié." });
-        if (req.user.role !== 'Supplier') return res.status(403).json({ message: "Accès refusé. Réservé aux fournisseurs." });
-        const commandes = await Commande.find({ supplier: supplierId })
-            .populate('projet', 'name status _id')
-            .populate('supplier', 'username contact _id')
-            .sort({ dateCmd: -1 });
-        res.status(200).json(commandes);
-    } catch (error) {
-        console.error("Erreur getMyCommandes:", error);
-        res.status(500).json({ message: "Erreur serveur.", error: error.message });
-    }
-};
-
-// --- GET COMMANDE BY ID (Admin, Assigned Supplier, or Project's ChefProjet) ---
-exports.getCommandeById = async (req, res) => {
-    // ... (Code inchangé)
-     try {
-        const commandeId = req.params.id;
-        const userId = req.user?.id;
-        const userRole = req.user?.role;
-        if (!mongoose.Types.ObjectId.isValid(commandeId)) return res.status(400).json({ message: "Format ID commande invalide." });
-        if (!userId) return res.status(401).json({ message: "Utilisateur non authentifié." });
-        const commande = await Commande.findById(commandeId)
-            .populate({ path: 'projet', select: 'chefProjet name _id' })
-            .populate({ path: 'supplier', select: 'username _id' });
-        if (!commande) return res.status(404).json({ message: "Commande non trouvée." });
-        const isAdmin = userRole === 'Admin';
-        const isAssignedSupplier = commande.supplier ? commande.supplier._id.toString() === userId : false;
-        const isProjectManager = commande.projet?.chefProjet?.toString() === userId;
-        if (!isAdmin && !isAssignedSupplier && !isProjectManager) return res.status(403).json({ message: "Accès refusé." });
-        const commandeDetails = await Commande.findById(commandeId)
-             .populate('projet', 'name description status _id chefProjet')
-             .populate('supplier', 'username contact phone address email _id');
-        res.status(200).json(commandeDetails || commande);
-    } catch (error) {
-        console.error("Erreur getCommandeById:", error);
-        res.status(500).json({ message: "Erreur serveur.", error: error.message });
-    }
-};
-
-// --- UPDATE COMMANDE STATUS (par un fournisseur, AVEC auto-assignation si nécessaire) ---
-exports.updateCommandeStatus = async (req, res) => {
-    // ... (Code inchangé)
-     try {
-        const commandeId = req.params.id;
-        const { statut } = req.body;
-        const currentSupplierId = req.user?.id;
-        if (!mongoose.Types.ObjectId.isValid(commandeId)) return res.status(400).json({ message: "Format ID commande invalide." });
-        if (!currentSupplierId) return res.status(401).json({ message: "Utilisateur non authentifié." });
-        if (req.user.role !== 'Supplier') return res.status(403).json({ message: "Accès refusé. Seuls les fournisseurs peuvent modifier le statut." });
-        if (!statut) return res.status(400).json({ message: "Le nouveau statut est requis." });
-        const allowedStatus = Commande.schema.path('statut').enumValues;
-        if (!allowedStatus.includes(statut)) return res.status(400).json({ message: `Statut invalide: ${statut}.`, allowedStatus });
-        const commandeToUpdate = await Commande.findById(commandeId);
-        if (!commandeToUpdate) return res.status(404).json({ message: "Commande non trouvée." });
-        let wasJustAssigned = false;
-        if (commandeToUpdate.supplier) {
-            if (commandeToUpdate.supplier.toString() !== currentSupplierId) return res.status(403).json({ message: "Accès refusé. Cette commande est déjà assignée à un autre fournisseur." });
-        } else {
-            commandeToUpdate.supplier = currentSupplierId;
-            wasJustAssigned = true;
+        // 8. En cas d'erreur PENDANT la transaction, l'annuler
+        console.error("Erreur lors de la création de la commande:", error);
+        // S'assurer que la session existe avant d'essayer d'annuler
+        if (session.inTransaction()) {
+           await session.abortTransaction();
         }
-        commandeToUpdate.statut = statut;
-        const updatedCommande = await commandeToUpdate.save({ runValidators: true });
-        if (wasJustAssigned) {
-            await Supplier.findByIdAndUpdate(currentSupplierId, { $addToSet: { commandes: updatedCommande._id } })
-                .catch(err => console.warn("Note: Could not update Supplier commande list on assign:", err.message));
+        session.endSession(); // Toujours terminer la session
+
+        if (error.code === 11000) {
+             return res.status(400).json({ success: false, message: "Erreur de duplicat: " + Object.keys(error.keyValue).join(', ') + " doit être unique."});
         }
-        const populatedResponse = await Commande.findById(updatedCommande._id)
-            .populate('projet', 'name status _id')
-            .populate('supplier', 'username contact _id');
-        res.status(200).json(populatedResponse);
-    } catch (error) {
-        console.error("Erreur updateCommandeStatus:", error);
-         if (error.name === 'ValidationError') return res.status(400).json({ message: "Erreur validation.", details: Object.values(error.errors).map(el => el.message) });
-        res.status(500).json({ message: "Erreur serveur.", error: error.message });
+        res.status(500).json({ success: false, message: "Erreur serveur lors de la création de la commande." });
     }
 };
 
-// --- DELETE COMMANDE (Admin or Assigned Supplier) ---
-exports.deleteCommande = async (req, res) => {
-    // ... (Code inchangé)
-     try {
-        const commandeId = req.params.id;
-        const userId = req.user?.id;
-        const userRole = req.user?.role;
-        if (!mongoose.Types.ObjectId.isValid(commandeId)) return res.status(400).json({ message: "Format ID commande invalide." });
-        if (!userId) return res.status(401).json({ message: "Utilisateur non authentifié." });
-        const commandeToDelete = await Commande.findById(commandeId);
-        if (!commandeToDelete) return res.status(404).json({ message: "Commande non trouvée." });
-        const isAdmin = userRole === 'Admin';
-        const isOwner = commandeToDelete.supplier ? commandeToDelete.supplier.toString() === userId : false;
-        if (!isAdmin && !isOwner) return res.status(403).json({ message: "Accès refusé. Seul l'administrateur ou le fournisseur assigné peut supprimer." });
-        const updatePromises = [ Project.findByIdAndUpdate(commandeToDelete.projet, { $pull: { commandes: commandeId } }) ];
-        if(commandeToDelete.supplier) {
-             updatePromises.push( Supplier.findByIdAndUpdate(commandeToDelete.supplier, { $pull: { commandes: commandeId } }) .catch(err => console.warn("Note: Could not update Supplier on delete:", err.message)) );
-        }
-        await Promise.all(updatePromises);
-        await Commande.findByIdAndDelete(commandeId);
-        res.status(200).json({ message: "Commande supprimée avec succès." });
-    } catch (error) {
-        console.error("Erreur deleteCommande:", error);
-        res.status(500).json({ message: "Erreur serveur lors de la suppression.", error: error.message });
-    }
-};
+// Les méthodes pour la validation par le fournisseur et la création de stock
+// devront être ajoutées séparément dans ce fichier ou un autre contrôleur.
+// Par exemple: exports.validateCommandItem = async (req, res) => { ... }
+
+
+
+
+
+
+/*
+En résumé simple : Cette fonction prend les informations d'une nouvelle commande soumise, 
+vérifie que tout est correct, puis enregistre de manière fiable la commande principale et toutes ses lignes 
+d'articles dans la base de données, en les marquant comme "Soumis" et en attente de l'étape suivante 
+    (validation par le fournisseur).
+
+*/ 
