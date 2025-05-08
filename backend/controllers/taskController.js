@@ -251,3 +251,37 @@ exports.deleteTask = async (req, res) => {
     res.status(500).json({ message: "Erreur serveur lors de la suppression.", error: error.message });
   }
 };
+exports.getTasksForSpecificProject = async (req, res) => {
+  try {
+    const { projectId } = req.params; // Notez req.params ici, pas req.query
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ success: false, message: "Format ID projet invalide." });
+    }
+
+    // Vérifier si le projet existe (optionnel, mais bonne pratique)
+    const projectExists = await Project.findById(projectId);
+    if (!projectExists) {
+      return res.status(404).json({ success: false, message: "Projet non trouvé." });
+    }
+
+    const tasks = await Task.find({ project: projectId }) // Filtre direct sur le projet
+      .populate("project", "name status") // Peut-être redondant si on est déjà dans le contexte du projet
+      .populate("assignedUser", "username email role")
+      .populate({
+          path: 'taskResources',
+          // options: { sort: { createdAt: 1 } }, // Déjà dans getTaskById, à voir si nécessaire ici
+          populate: { path: 'resource', select: 'name unit type quantityAvailable' } // Adaptez les champs de 'resource'
+      })
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+        success: true,
+        count: tasks.length,
+        data: tasks
+    });
+  } catch (error) {
+    console.error(`Erreur getTasksForSpecificProject pour projectId ${req.params.projectId}:`, error);
+    res.status(500).json({ success: false, message: "Erreur serveur.", error: error.message });
+  }
+};

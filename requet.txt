@@ -1,0 +1,23 @@
+Chef Projet 
+
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MWM5MWQwZjc3N2QwMzc3NGQ0NWVlMCIsInVzZXJuYW1lIjoiQ2hlZlByb2pldEFobWVkIiwicm9sZSI6IkNoZWZQcm9qZXQiLCJpYXQiOjE3NDY3MDI4MzEsImV4cCI6MTc0Njc4OTIzMX0.rOobEvHFIOTuVtBtaPVP1k5iNlWi4h_ourqo1Amcv-M
+
+
+
+
+
+Supplier :
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MWM5MzUyZjc3N2QwMzc3NGQ0NWVlZCIsInVzZXJuYW1lIjoiRm91cm5pc3NldXIxIiwicm9sZSI6IlN1cHBsaWVyIiwiaWF0IjoxNzQ2NzAzMjEzLCJleHAiOjE3NDY3ODk2MTN9.1RbbXTEu4jVIm6d_F_xUnvwfp09BpkawgjVJHC1752Q
+
+
+
+
+cmd Mongo:
+
+
+cd C:\mongodb-win32-x86_64-windows-4.4.29\bin
+
+
+mongod.exe --config "C:\mongodb-win32-x86_64-windows-4.4.29\mongod.cfg"
